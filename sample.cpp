@@ -71,16 +71,12 @@ struct Environment
         m_original.lock();
         m_thread1.lock();
 
-        done1 = false;
-        done2 = false;
-
         t = std::thread([&]()
         {
             swap_threads(c_thread1, m_thread1, c_original, m_original, done2, done1);
 
             exec_nanogui();         // continue nanogui loop in the main thread
 
-            done1 = false;
             swap_threads(c_original, m_original, c_thread1, m_thread1, done1, done2);
         });
         t.detach();
@@ -90,7 +86,6 @@ struct Environment
 
     void finalize()
     {
-        done2 = false;
         swap_threads(c_thread1, m_thread1, c_original, m_original, done2, done1);
     }
 
