@@ -4,6 +4,8 @@
 
 #include <iostream>
 #include <thread>
+#include <mutex>
+#include <csetjmp>
 
 #include <nanogui/screen.h>
 namespace ng = nanogui;
@@ -14,70 +16,98 @@ namespace ng = nanogui;
 #include <pybind11/stl.h>
 namespace py = pybind11;
 
-#include "coro.h"
-typedef     coro_context                    context_t;
-
 struct Environment
 {
-    static void exec_nanogui(void* self_)
+    void    exec_nanogui()
     {
-        Environment* self = static_cast<Environment*>(self_);
-        self->m_nanogui.lock();
-        self->m_original.unlock();
-
         ng::init();
 
-        self->app = new ng::Screen(ng::Vector2i { 800, 600 }, "Test");
+        app = new ng::Screen(ng::Vector2i { 800, 600 }, "Test");
 
-        self->app->drawAll();
-        self->app->setVisible(true);
+        app->drawAll();
+        app->setVisible(true);
         ng::mainloop();
 
-        delete self->app;
+        delete app;
         ng::shutdown();
+    }
 
-        self->m_nanogui.unlock();
-        self->m_original.lock();
-        coro_transfer(&self->c_nanogui, &self->c_original);
+    static void swap_threads(std::jmp_buf& c1, std::mutex& m1, std::jmp_buf& c2, std::mutex& m2, volatile bool& done1, volatile bool& done2)
+    {
+        std::jmp_buf  c_intermediate;
+        std::mutex    m_intermediate;
+        m_intermediate.lock();
+
+        done1 = false;
+
+        std::thread t = std::thread([&]()
+        {
+            if (!setjmp(c_intermediate))
+            {
+                m_intermediate.unlock();
+                while (!done1);
+            } else
+            {
+                m1.unlock();
+                m2.lock();
+                longjmp(c2, 1);
+            }
+        });
+        t.detach();
+
+        if (!setjmp(c1))
+        {
+            m_intermediate.lock();
+            longjmp(c_intermediate, 1);
+        } else
+        {
+            //m2.unlock();
+            done2 = true;
+        }
     }
 
     void run()
     {
-        coro_create(&c_original, NULL, NULL, NULL, 0);
-        coro_stack_alloc(&stack, 8*1024*1024);     // 8MB stack
-
         m_original.lock();
+        m_thread1.lock();
+
+        done1 = false;
+        done2 = false;
 
         t = std::thread([&]()
         {
-            coro_create(&c_thread1, NULL, NULL, NULL, 0);
-            m_original.lock();
-            coro_transfer(&c_thread1, &c_original);        // continue the original context in thread1
-            m_original.unlock();
+            swap_threads(c_thread1, m_thread1, c_original, m_original, done2, done1);
+
+            exec_nanogui();         // continue nanogui loop in the main thread
+
+            done1 = false;
+            swap_threads(c_original, m_original, c_thread1, m_thread1, done1, done2);
         });
         t.detach();
 
-        coro_create(&c_nanogui, exec_nanogui, this, stack.sptr, stack.ssze);
-        coro_transfer(&c_original, &c_nanogui);           // continue nanogui loop in the main thread
+        swap_threads(c_original, m_original, c_thread1, m_thread1, done1, done2);
     }
 
     void finalize()
     {
-        m_nanogui.lock();       // make sure nanogui is done; possibly signal to the app to shut down
-        coro_transfer(&c_original, &c_thread1);
+        done2 = false;
+        swap_threads(c_thread1, m_thread1, c_original, m_original, done2, done1);
     }
 
     ng::Screen*     app;
 
-    std::mutex      m_original;
     std::mutex      m_nanogui;
 
-    std::thread     t;
-    context_t       c_thread1;
-    context_t       c_original;
-    context_t       c_nanogui;
-    coro_stack      stack;
+    volatile bool   done1;
+    volatile bool   done2;
 
+    std::jmp_buf    c_original;
+    std::jmp_buf    c_thread1;
+
+    std::mutex      m_original;
+    std::mutex      m_thread1;
+
+    std::thread     t;
 };
 
 PYBIND11_PLUGIN(sample)

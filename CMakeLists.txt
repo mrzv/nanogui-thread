@@ -52,10 +52,9 @@ find_package                (PythonInterp ${HENSON_PYTHON_VERSION} REQUIRED)
 
 include_directories         (${PYTHON_INCLUDE_DIR} include)
 
-add_library                 (sample_lib SHARED sample.cpp coro.c)
+add_library                 (sample_lib SHARED sample.cpp)
 target_link_libraries       (sample_lib ${NANOGUI_LIBRARY} ${GLFW3_LIBRARY}
                                         ${OGDF_LIBRARY} ${COIN_LIBRARY} ${CMAKE_THREAD_LIBS_INIT})
-set_target_properties       (sample_lib PROPERTIES COMPILE_FLAGS "-DCORO_SJLJ")
 set_target_properties       (sample_lib PROPERTIES OUTPUT_NAME sample)
 
 
