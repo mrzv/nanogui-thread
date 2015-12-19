@@ -83,6 +83,7 @@ struct Environment
             m_nanogui.unlock();
             m_finalize.lock();
             swap_threads(c_original, m_original, c_thread1, m_thread1, done1, done2);
+            m_finalize.unlock();
         });
         t.detach();
 
@@ -92,7 +93,14 @@ struct Environment
     void finalize()
     {
         m_finalize.unlock();
+        m_nanogui.lock();
         swap_threads(c_thread1, m_thread1, c_original, m_original, done2, done1);
+
+        m_finalize.lock();
+        m_finalize.unlock();
+        m_nanogui.unlock();
+        m_thread1.unlock();
+        m_original.unlock();
     }
 
     ng::Screen*     app;
