@@ -40,12 +40,6 @@ struct Environment
 
         done1 = false;
 
-        // make sure the other thread is ready
-        m1.unlock();
-        m2.lock();
-        m2.unlock();
-        m1.lock();
-
         std::thread t = std::thread([&]()
         {
             if (!setjmp(c_intermediate))
@@ -77,12 +71,17 @@ struct Environment
         m_original.lock();
         m_thread1.lock();
 
+        m_nanogui.lock();
+        m_finalize.lock();
+
         t = std::thread([&]()
         {
             swap_threads(c_thread1, m_thread1, c_original, m_original, done2, done1);
 
             exec_nanogui();         // continue nanogui loop in the main thread
 
+            m_nanogui.unlock();
+            m_finalize.lock();
             swap_threads(c_original, m_original, c_thread1, m_thread1, done1, done2);
         });
         t.detach();
@@ -92,6 +91,7 @@ struct Environment
 
     void finalize()
     {
+        m_finalize.unlock();
         swap_threads(c_thread1, m_thread1, c_original, m_original, done2, done1);
     }
 
@@ -105,6 +105,9 @@ struct Environment
 
     std::mutex      m_original;
     std::mutex      m_thread1;
+
+    std::mutex      m_finalize;
+    std::mutex      m_nanogui;
 
     std::thread     t;
 };
