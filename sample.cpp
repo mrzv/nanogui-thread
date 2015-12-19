@@ -68,9 +68,9 @@ struct Environment
 
     void run()
     {
+        // lock everything
         m_original.lock();
         m_thread1.lock();
-
         m_nanogui.lock();
         m_finalize.lock();
 
@@ -80,10 +80,10 @@ struct Environment
 
             exec_nanogui();         // continue nanogui loop in the main thread
 
-            m_nanogui.unlock();
+            m_nanogui.unlock();     // these locks are here to make sure finalize is read (so we don't idle in swap_threads)
             m_finalize.lock();
             swap_threads(c_original, m_original, c_thread1, m_thread1, done1, done2);
-            m_finalize.unlock();
+            m_finalize.unlock();    // signal that we are done here, everything can be unlocked on the other end
         });
         t.detach();
 
@@ -92,11 +92,13 @@ struct Environment
 
     void finalize()
     {
-        m_finalize.unlock();
+        m_finalize.unlock();        // these locks are here to make sure nanogui is done (so we don't idle in swap_threads)
         m_nanogui.lock();
         swap_threads(c_thread1, m_thread1, c_original, m_original, done2, done1);
 
-        m_finalize.lock();
+        m_finalize.lock();          // this lock is here to make sure swap_threads is safely complete on the other end
+
+        // unlock everything, so that run/finalize can be run again
         m_finalize.unlock();
         m_nanogui.unlock();
         m_thread1.unlock();
@@ -111,9 +113,13 @@ struct Environment
     std::jmp_buf    c_original;
     std::jmp_buf    c_thread1;
 
+    // these locks are used within swap_threads to indicate when it's safe to enter a particular thread from the outside
     std::mutex      m_original;
     std::mutex      m_thread1;
 
+    // these locks help synchronize high level operations (nanogui and
+    // finalize) without idling (in the infinite loop, at 100% CPU) in
+    // swap_threads
     std::mutex      m_finalize;
     std::mutex      m_nanogui;
 
