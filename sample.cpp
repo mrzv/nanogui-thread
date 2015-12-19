@@ -40,6 +40,12 @@ struct Environment
 
         done1 = false;
 
+        // make sure the other thread is ready
+        m1.unlock();
+        m2.lock();
+        m2.unlock();
+        m1.lock();
+
         std::thread t = std::thread([&]()
         {
             if (!setjmp(c_intermediate))
