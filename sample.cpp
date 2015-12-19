@@ -96,8 +96,6 @@ struct Environment
 
     ng::Screen*     app;
 
-    std::mutex      m_nanogui;
-
     volatile bool   done1;
     volatile bool   done2;
 
